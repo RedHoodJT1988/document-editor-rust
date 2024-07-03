@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Collaborative Document Editing System - Rust</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+  </head>
+
+  <body>
+    <header>
+      <div class="banner">
+        <h1>Programming with Jon</h1>
+      </div>
+    </header>
+    <div id="editor">
+    </div>
+
+    <script>
+      let last_update = 0;
+      let last_delta = {}
+
+      const ws = new WebSocket("ws://127.0.0.1:8080/ws/");
+
+      ws.onopen = function(event) {
+        console.log("Connection opened");
+      };
+
+      ws.onclose = function(event) {
+        console.log("Connection closed");
+      };
+
+      const toolbarOptions = [
+        ["bold", "italic", "underline"]
+      ];
+
+      var quill = new Quill("#editor", {
+        modules: {
+          toolbar: toolbarOptions
+        },
+        theme: "snow"
+      });
+
+      quill.on("text-change", (delta, oldDelta, source) => {
+        last_update = Date.now();
+        last_delta = delta;
+
+        let obj = {
+          time: last_update,
+          delta: delta
+        };
+
+        if (source === "user") {
+          console.log(JSON.stringify(obj));
+          ws.send(JSON.stringify(obj));
+        }
+      });
+
+      ws.onmessage = function(event) {
+        try {
+          console.log("Message from server: ", event.data);
+          let obj = JSON.parse(event.data);
+
+          let time = obj.time;
+          let delta = obj.delta;
+
+          if (last_update < time) {
+            // server update is newer, apply directly
+            quill.updateContents(delta);
+          } else if (last_update > time) {
+            console.warn("Received outdated server update!");
+          }
+
+          // ensure local time is in synce or ahead
+          last_update = Math.max(last_update, time);
+        } catch (error) {
+          console.error("Error handling message: ", error);
+          // notify the user about the change conflicts
+          // close ws and reopen it
+        }
+      };
+    </script>
+  </body>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background-size: cover;
+      background-position: center;
+      color: white;
+      text-align: center;
+      padding: 50px 0;
+    }
+
+    .banner h1 {
+      font-size: 48px;
+      margin: 0;
+      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+    }
+
+    #editor {
+      width: 80%;
+      margin: 0 auto;
+    }
+  </style>
+</html>
